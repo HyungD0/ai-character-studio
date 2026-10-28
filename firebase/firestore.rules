@@ -1,0 +1,44 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // 공유된 캐릭터: 링크(id)를 아는 사람만 읽기, 목록 조회는 금지
+    match /characters/{id} {
+      allow get: if true;
+      allow list: if false;
+
+      allow create: if request.auth != null
+                    && request.resource.data.ownerUid == request.auth.uid
+                    && validCharacter(request.resource.data);
+
+      // 만든 사람(같은 익명 계정)만 수정·삭제
+      allow update: if request.auth != null
+                    && resource.data.ownerUid == request.auth.uid
+                    && request.resource.data.ownerUid == request.auth.uid
+                    && validCharacter(request.resource.data);
+
+      // 링크로 들어온 사람은 조회수(views)를 정확히 +1 하는 것만 가능
+      allow update: if request.auth != null
+                    && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['views'])
+                    && request.resource.data.views == resource.data.get('views', 0) + 1;
+      allow delete: if request.auth != null && resource.data.ownerUid == request.auth.uid;
+    }
+
+    // 신고: 쓰기만 가능, 읽기는 Firebase 콘솔에서 관리자만
+    match /reports/{id} {
+      allow create: if request.auth != null
+                    && request.resource.data.reporterUid == request.auth.uid
+                    && request.resource.data.reason is string
+                    && request.resource.data.reason.size() <= 200;
+      allow read, update, delete: if false;
+    }
+
+    function validCharacter(d) {
+      return d.name is string && d.name.size() > 0 && d.name.size() <= 12
+          && d.greeting is string && d.greeting.size() <= 60
+          && d.persona in ['sweet', 'tsundere', 'playful', 'calm']
+          && d.photo is string && d.photo.size() < 400000
+          && d.slots is map && d.slots.size() <= 5;
+    }
+  }
+}

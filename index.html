@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>AI 캐릭터 스튜디오</title>
+  <meta name="description" content="내 사진으로 캐릭터를 만들고 대화해 보세요.">
+  <!-- 카카오톡/SNS 링크 미리보기 (이미지는 전체 주소여야 함) -->
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://hyungd0.github.io/ai-character-studio/">
+  <meta property="og:title" content="AI 캐릭터 스튜디오">
+  <meta property="og:description" content="내 사진으로 캐릭터를 만들고 대화해 보세요 💌">
+  <meta property="og:image" content="https://hyungd0.github.io/ai-character-studio/assets/haru/happy.webp">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="app">
+
+    <!-- ① 홈: 내 캐릭터 목록 -->
+    <section id="screen-home" class="screen">
+      <header class="top">
+        <h1>AI 캐릭터 스튜디오</h1>
+        <p class="sub">사진 한 장으로 나만의 대화 캐릭터 만들기</p>
+      </header>
+      <div id="character-list" class="card-grid"></div>
+      <button id="btn-new" class="btn primary big">＋ 새 캐릭터 만들기</button>
+      <p class="hint">캐릭터는 이 기기(브라우저)에 저장돼요.</p>
+    </section>
+
+    <!-- ② 만들기 / 수정 -->
+    <section id="screen-edit" class="screen" hidden>
+      <header class="bar">
+        <button class="btn ghost" data-go="home">← 뒤로</button>
+        <h2 id="edit-title">새 캐릭터</h2>
+      </header>
+
+      <form id="edit-form" class="form">
+        <label class="photo-pick">
+          <img id="edit-photo-preview" alt="">
+          <span id="edit-photo-empty">📷<br>사진 선택</span>
+          <input type="file" id="edit-photo" accept="image/*">
+        </label>
+
+        <details class="emotion-slots">
+          <summary>표정별 사진 따로 넣기 (선택)</summary>
+          <p class="hint">비워 두면 기본 사진에 표정 효과를 입혀서 보여줘요.</p>
+          <div id="slot-list" class="slot-list"></div>
+        </details>
+
+        <label>이름 <input id="edit-name" maxlength="12" required placeholder="예: 하루"></label>
+        <label>나를 부르는 호칭 <input id="edit-nick" maxlength="12" placeholder="예: 형도 (비워도 돼요)"></label>
+        <label>성격
+          <select id="edit-persona">
+            <option value="sweet">다정함</option>
+            <option value="tsundere">츤데레</option>
+            <option value="playful">장난꾸러기</option>
+            <option value="calm">차분함</option>
+          </select>
+        </label>
+        <label>첫인사 <input id="edit-greeting" maxlength="60" placeholder="예: 안녕! 오늘 하루 어땠어?"></label>
+
+        <label class="consent">
+          <input type="checkbox" id="edit-consent" required>
+          본인 사진이거나 사용 권한이 있는 이미지예요. (타인·연예인 사진 금지)
+        </label>
+
+        <div class="row">
+          <button type="button" id="btn-delete" class="btn danger" hidden>삭제</button>
+          <button type="submit" class="btn primary grow">저장하고 대화하기</button>
+        </div>
+      </form>
+    </section>
+
+    <!-- ③ 대화 -->
+    <section id="screen-chat" class="screen" hidden>
+      <header class="bar">
+        <button class="btn ghost" data-go="home">←</button>
+        <h2 id="chat-name"></h2>
+        <div class="affection" title="호감도"><span>💗</span><div class="meter"><i id="affection-fill"></i></div></div>
+        <button id="btn-card" class="btn ghost" title="대화 카드 만들기">📸</button>
+        <button id="btn-share" class="btn ghost" title="공유">📤</button>
+        <button id="btn-edit" class="btn ghost" title="수정">✎</button>
+      </header>
+
+      <!-- 공유 링크로 들어온 사람에게 보이는 안내 -->
+      <div id="guest-banner" class="guest-banner" hidden>
+        <span>친구가 만든 캐릭터예요</span>
+        <button id="btn-make-own" class="btn primary">나도 만들기</button>
+      </div>
+
+      <div class="stage">
+        <div id="avatar" class="avatar emo-neutral">
+          <img id="avatar-img" alt="">
+          <div class="fx blush"></div>
+          <div class="fx tint"></div>
+          <div id="avatar-badge" class="badge"></div>
+        </div>
+      </div>
+
+      <div id="chat-log" class="chat-log" aria-live="polite"></div>
+
+      <form id="chat-form" class="chat-input">
+        <input id="chat-text" autocomplete="off" maxlength="120" placeholder="메시지를 입력하세요">
+        <button class="btn primary">보내기</button>
+      </form>
+    </section>
+
+    <!-- 공유 링크로 캐릭터를 불러오는 중 / 실패 -->
+    <section id="screen-loading" class="screen center" hidden>
+      <p id="loading-text">캐릭터를 불러오는 중…</p>
+      <button class="btn primary" data-go="home" id="loading-home" hidden>홈으로</button>
+    </section>
+  </div>
+
+  <!-- 공유 시트 -->
+  <div id="share-sheet" class="sheet-backdrop" hidden>
+    <div class="sheet" role="dialog" aria-labelledby="share-title">
+      <h3 id="share-title">친구에게 공유하기</h3>
+      <p id="share-views" class="views" hidden></p>
+      <p id="share-status" class="hint"></p>
+      <div id="share-body" hidden>
+        <button id="btn-kakao" class="btn kakao big" hidden>💬 카카오톡으로 공유</button>
+        <input id="share-link" readonly>
+        <div class="row">
+          <button id="btn-copy" class="btn grow">링크 복사</button>
+          <button id="btn-native-share" class="btn primary grow">공유하기</button>
+        </div>
+        <p class="hint">링크를 아는 사람만 볼 수 있어요. 받은 사람은 대화만 할 수 있고 수정은 못 해요.</p>
+      </div>
+      <button id="btn-report" class="btn ghost small" hidden>🚩 이 캐릭터 신고하기</button>
+      <button id="btn-unshare" class="btn ghost small" hidden>공유 중지 (링크 삭제)</button>
+      <button id="btn-sheet-close" class="btn ghost">닫기</button>
+    </div>
+  </div>
+
+  <!-- 대화 카드 -->
+  <div id="card-sheet" class="sheet-backdrop" hidden>
+    <div class="sheet" role="dialog" aria-labelledby="card-title">
+      <h3 id="card-title">대화 카드</h3>
+      <p id="card-status" class="hint">카드를 만드는 중…</p>
+      <img id="card-preview" class="card-preview" alt="대화 카드 미리보기" hidden>
+      <button id="btn-card-kakao" class="btn kakao" hidden>💬 카톡으로 카드 보내기</button>
+      <div class="row">
+        <button id="btn-card-save" class="btn grow">이미지 저장</button>
+        <button id="btn-card-share" class="btn primary grow" hidden>공유하기</button>
+      </div>
+      <button id="btn-card-close" class="btn ghost">닫기</button>
+    </div>
+  </div>
+
+  <script src="config.js"></script>
+  <script src="chat-db.js"></script>
+  <script src="engine.js"></script>
+  <script src="cloud.js"></script>
+  <script src="kakao.js"></script>
+  <script src="viral.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
