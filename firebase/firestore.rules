@@ -38,7 +38,9 @@ service cloud.firestore {
           && d.greeting is string && d.greeting.size() <= 60
           && d.persona in ['sweet', 'tsundere', 'playful', 'calm']
           && d.photo is string && d.photo.size() < 400000
-          && d.slots is map && d.slots.size() <= 5;
+          && d.slots is map && d.slots.size() <= 5
+          && (!('bio' in d) || (d.bio is string && d.bio.size() <= 400))
+          && (!('background' in d) || (d.background is string && d.background.size() < 400000));
     }
   }
 }

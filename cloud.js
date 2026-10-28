@@ -17,7 +17,9 @@
         canvas.width = Math.round(img.width * scale);
         canvas.height = Math.round(img.height * scale);
         canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
-        resolve(canvas.toDataURL("image/jpeg", quality));
+        // 투명 이미지(PNG/WebP)는 투명도를 살려서 다시 저장
+        const transparent = /^data:image\/(png|webp)/.test(src);
+        resolve(window.ImageEditor.exportCanvas(canvas, transparent, quality));
       };
       img.onerror = () => resolve(src);
       img.src = src;
@@ -30,8 +32,9 @@
       const slots = {};
       for (const [emo, src] of Object.entries(c.slots || {})) slots[emo] = await recompress(src, Math.round(side * 0.75), q);
       const doc = {
-        name: c.name, persona: c.persona, greeting: c.greeting, sprite: !!c.sprite,
+        name: c.name, persona: c.persona, greeting: c.greeting, sprite: !!c.sprite, bio: c.bio || "",
         photo: await recompress(c.photo, side, q), slots,
+        background: c.background ? await recompress(c.background, Math.round(side * 1.6), q) : "",
       };
       if (JSON.stringify(doc).length < MAX_DOC_BYTES) return doc;
     }

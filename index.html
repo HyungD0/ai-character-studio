@@ -11,7 +11,7 @@
   <meta property="og:title" content="AI 캐릭터 스튜디오">
   <meta property="og:description" content="내 사진으로 캐릭터를 만들고 대화해 보세요 💌">
   <meta property="og:image" content="https://hyungd0.github.io/ai-character-studio/assets/haru/happy.webp">
-  <link rel="stylesheet" href="style.css?v=2">
+  <link rel="stylesheet" href="style.css?v=3">
 </head>
 <body>
   <div id="app">
@@ -24,6 +24,7 @@
       </header>
       <div id="character-list" class="card-grid"></div>
       <button id="btn-new" class="btn primary big">＋ 새 캐릭터 만들기</button>
+      <button id="btn-ai-home" class="btn big ai-entry">🤖 AI 실시간 대화 설정 <span id="ai-home-state"></span></button>
       <p class="hint">캐릭터는 이 기기(브라우저)에 저장돼요.</p>
     </section>
 
@@ -40,6 +41,18 @@
           <span id="edit-photo-empty">📷<br>사진 선택</span>
           <input type="file" id="edit-photo" accept="image/*">
         </label>
+        <p class="hint">사진을 고르면 확대·축소하고 위치를 맞출 수 있어요. 배경이 투명한 PNG를 권장해요.</p>
+        <button type="button" id="btn-photo-readjust" class="btn small-btn" hidden>사진 다시 맞추기</button>
+
+        <div class="bg-pick">
+          <span class="label">배경</span>
+          <label class="bg-thumb">
+            <img id="edit-bg-preview" alt="">
+            <span id="edit-bg-empty">기본 방</span>
+            <input type="file" id="edit-bg" accept="image/*">
+          </label>
+          <button type="button" id="btn-bg-reset" class="btn small-btn" hidden>기본 배경으로</button>
+        </div>
 
         <details class="emotion-slots">
           <summary>표정별 사진 따로 넣기 (선택)</summary>
@@ -49,7 +62,7 @@
 
         <label>이름 <input id="edit-name" maxlength="12" required placeholder="예: 하루"></label>
         <label>나를 부르는 호칭 <input id="edit-nick" maxlength="12" placeholder="예: 형도 (비워도 돼요)"></label>
-        <label>성격
+        <label>말투
           <select id="edit-persona">
             <option value="sweet">다정함</option>
             <option value="tsundere">츤데레</option>
@@ -58,6 +71,10 @@
           </select>
         </label>
         <label>첫인사 <input id="edit-greeting" maxlength="60" placeholder="예: 안녕! 오늘 하루 어땠어?"></label>
+        <label>캐릭터 설정 <small class="muted">(AI 대화에서 사용)</small>
+          <textarea id="edit-bio" rows="4" maxlength="400"
+            placeholder="예: 같은 대학 게임개발 동아리 친구. 디저트와 고양이를 좋아하고, 칭찬받으면 쉽게 당황한다. 비 오는 날을 싫어한다."></textarea>
+        </label>
 
         <label class="consent">
           <input type="checkbox" id="edit-consent" required>
@@ -89,6 +106,7 @@
       </div>
 
       <div class="stage">
+        <button id="chat-mode" class="mode-chip" title="대화 방식 설정">기본 대화</button>
         <div id="avatar" class="avatar emo-neutral">
           <img id="avatar-img" alt="">
           <div class="fx blush"></div>
@@ -133,6 +151,46 @@
     </div>
   </div>
 
+  <!-- 사진 편집기 -->
+  <div id="image-editor" class="sheet-backdrop" hidden>
+    <div class="sheet" role="dialog" aria-labelledby="ie-title">
+      <h3 id="ie-title">사진 맞추기</h3>
+      <canvas id="ie-canvas" class="ie-canvas"></canvas>
+      <div class="row ie-zoom-row">
+        <span>－</span><input type="range" id="ie-zoom" class="grow" aria-label="확대·축소"><span>＋</span>
+      </div>
+      <p id="ie-hint" class="hint"></p>
+      <p class="hint">드래그로 위치 이동 · 슬라이더/휠/두 손가락으로 확대·축소</p>
+      <div class="row">
+        <button id="ie-cancel" class="btn">취소</button>
+        <button id="ie-fit" class="btn">꽉 채우기 ↔ 전체</button>
+        <button id="ie-ok" class="btn primary grow">완료</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- AI 대화 설정 -->
+  <div id="ai-sheet" class="sheet-backdrop" hidden>
+    <form id="ai-form" class="sheet form" role="dialog" aria-labelledby="ai-title">
+      <h3 id="ai-title">🤖 AI 실시간 대화</h3>
+      <p class="hint">API 키를 넣으면 키워드 대화 대신 AI가 캐릭터 설정대로 자유롭게 대답해요.</p>
+      <label>AI 서비스
+        <select id="ai-provider"></select>
+      </label>
+      <label>모델 <input id="ai-model" autocomplete="off" spellcheck="false"></label>
+      <label>API 키 <input id="ai-key" type="password" autocomplete="off" spellcheck="false" placeholder="여기에 붙여넣기"></label>
+      <a id="ai-key-link" class="hint-link" target="_blank" rel="noopener">API 키 발급받기 ↗</a>
+      <label class="consent"><input type="checkbox" id="ai-remember"> 이 기기에 키 기억하기 (공용 PC에서는 끄세요)</label>
+      <p class="hint warn">🔒 키는 이 브라우저에만 저장되고, 서버나 공유 링크에는 절대 올라가지 않아요. 사용 요금은 키 주인에게 청구돼요.</p>
+      <p id="ai-status" class="hint"></p>
+      <div class="row">
+        <button type="button" id="ai-off" class="btn">AI 끄기</button>
+        <button type="button" id="ai-test" class="btn">연결 테스트</button>
+        <button type="submit" class="btn primary grow">저장</button>
+      </div>
+    </form>
+  </div>
+
   <!-- 대화 카드 -->
   <div id="card-sheet" class="sheet-backdrop" hidden>
     <div class="sheet" role="dialog" aria-labelledby="card-title">
@@ -148,12 +206,14 @@
     </div>
   </div>
 
-  <script src="config.js?v=2"></script>
-  <script src="chat-db.js?v=2"></script>
-  <script src="engine.js?v=2"></script>
-  <script src="cloud.js?v=2"></script>
-  <script src="kakao.js?v=2"></script>
-  <script src="viral.js?v=2"></script>
-  <script src="app.js?v=2"></script>
+  <script src="config.js?v=3"></script>
+  <script src="chat-db.js?v=3"></script>
+  <script src="engine.js?v=3"></script>
+  <script src="ai.js?v=3"></script>
+  <script src="image-editor.js?v=3"></script>
+  <script src="cloud.js?v=3"></script>
+  <script src="kakao.js?v=3"></script>
+  <script src="viral.js?v=3"></script>
+  <script src="app.js?v=3"></script>
 </body>
 </html>

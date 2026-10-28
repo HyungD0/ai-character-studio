@@ -9,6 +9,8 @@
   const HARU = {
     id: "haru", builtIn: true, name: "하루", nickname: "", persona: "sweet",
     greeting: "안녕! 오늘 프로젝트는 잘 돼 가? 무슨 얘기든 해 줘.",
+    bio: "같은 대학 게임 개발 동아리 친구. 밝고 다정하지만 칭찬을 받으면 쉽게 당황한다. 호기심이 많고 게임과 디저트를 좋아한다.",
+    background: "",
     photo: "assets/haru/neutral.webp",
     slots: Object.fromEntries(window.EMOTIONS.map((e) => [e, `assets/haru/${e}.webp`])),
     sprite: true, affection: 20,
@@ -24,11 +26,14 @@
     let list = [];
     try { list = JSON.parse(localStorage.getItem(STORE_KEY)) || []; } catch { /* 비공개 창 등 */ }
     const haruState = list.find((c) => c.id === "haru") || {};
-    return [{ ...HARU, affection: haruState.affection ?? HARU.affection, cloudId: haruState.cloudId }, ...list.filter((c) => c.id !== "haru")];
+    // 하루는 사진은 고정, 이름·설정·배경 등 고친 값만 덮어씀
+    const haru = { ...HARU };
+    for (const k of HARU_EDITABLE) if (haruState[k] !== undefined) haru[k] = haruState[k];
+    return [haru, ...list.filter((c) => c.id !== "haru")];
   }
+  const HARU_EDITABLE = ["affection", "cloudId", "name", "nickname", "persona", "greeting", "bio", "background"];
   function saveCharacters(list) {
-    // 하루는 호감도와 공유 링크만 저장
-    const data = list.map((c) => (c.builtIn ? { id: c.id, affection: c.affection, cloudId: c.cloudId } : c));
+    const data = list.map((c) => (c.builtIn ? Object.fromEntries([["id", c.id], ...HARU_EDITABLE.map((k) => [k, c[k]])]) : c));
     try {
       localStorage.setItem(STORE_KEY, JSON.stringify(data));
       return true;
@@ -39,26 +44,6 @@
   }
   let characters = loadCharacters();
   const findChar = (id) => characters.find((c) => c.id === id);
-
-  // ---------------------------------------------------------------- 사진 줄이기
-  // 휴대폰 사진(수 MB)을 그대로 저장하면 금방 꽉 차므로 가로·세로 최대 maxSide 의 JPEG 로 줄임
-  function resizeImage(file, maxSide) {
-    return new Promise((resolve, reject) => {
-      const url = URL.createObjectURL(file);
-      const img = new Image();
-      img.onload = () => {
-        const scale = Math.min(1, maxSide / Math.max(img.width, img.height));
-        const canvas = document.createElement("canvas");
-        canvas.width = Math.round(img.width * scale);
-        canvas.height = Math.round(img.height * scale);
-        canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
-        URL.revokeObjectURL(url);
-        resolve(canvas.toDataURL("image/jpeg", 0.82));
-      };
-      img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("이미지를 읽을 수 없어요")); };
-      img.src = url;
-    });
-  }
 
   // ---------------------------------------------------------------- 화면 전환 (#/, #/new, #/edit/id, #/chat/id, #/c/공유id)
   function show(screen) {
@@ -99,26 +84,52 @@
 
   // ---------------------------------------------------------------- ② 만들기 / 수정
   let draft = null;
+  let photoFile = null; // [사진 다시 맞추기]용 원본 파일 (저장하지 않음)
+
+  // 결과 이미지 크기: 캐릭터 3:4, 배경은 대화 화면 무대에 맞춘 4:3
+  const PHOTO_SIZE = { width: 600, height: 800, title: "캐릭터 사진 맞추기" };
+  const SLOT_SIZE = { width: 480, height: 640 };
+  const BG_SIZE = { width: 960, height: 720, title: "배경 맞추기" };
+
+  async function editImage(file, size) {
+    try {
+      return await window.ImageEditor.open(file, size);
+    } catch (err) {
+      alert(err.message);
+      return null;
+    }
+  }
 
   function openEdit(c) {
-    draft = c ? { ...c, slots: { ...c.slots } } : { id: null, name: "", nickname: "", persona: "sweet", greeting: "", photo: "", slots: {}, affection: 10 };
+    draft = c ? { ...c, slots: { ...c.slots } }
+      : { id: null, name: "", nickname: "", persona: "sweet", greeting: "", bio: "", background: "", photo: "", slots: {}, affection: 10 };
+    photoFile = null;
     $("edit-title").textContent = c ? `${c.name} 수정` : "새 캐릭터";
     $("edit-name").value = draft.name;
     $("edit-nick").value = draft.nickname;
     $("edit-persona").value = draft.persona;
     $("edit-greeting").value = draft.greeting;
+    $("edit-bio").value = draft.bio || "";
     $("edit-consent").checked = !!c;
     $("btn-delete").hidden = !c || c.builtIn;
-    // 기본 캐릭터는 사진을 바꿀 수 없음 (이름·성격만)
+    // 기본 캐릭터는 사진을 바꿀 수 없음 (이름·설정·배경만)
     $("edit-photo").disabled = !!draft.builtIn;
     renderPhoto();
     renderSlots();
+    renderBackground();
     show("edit");
   }
 
   function renderPhoto() {
     $("edit-photo-preview").src = draft.photo || "";
     $("edit-photo-empty").hidden = !!draft.photo;
+    $("btn-photo-readjust").hidden = !photoFile;
+  }
+
+  function renderBackground() {
+    $("edit-bg-preview").src = draft.background || "";
+    $("edit-bg-empty").hidden = !!draft.background;
+    $("btn-bg-reset").hidden = !draft.background;
   }
 
   function renderSlots() {
@@ -133,9 +144,13 @@
       const input = label.querySelector("input");
       input.disabled = !!draft.builtIn;
       input.addEventListener("change", async () => {
-        if (!input.files[0]) return;
-        draft.slots[emo] = await resizeImage(input.files[0], 480);
-        if (emo === "neutral" && !draft.photo) { draft.photo = draft.slots[emo]; renderPhoto(); }
+        const file = input.files[0];
+        input.value = "";
+        if (!file) return;
+        const result = await editImage(file, { ...SLOT_SIZE, title: `${EMOTION_LABEL[emo]} 표정 맞추기` });
+        if (!result) return;
+        draft.slots[emo] = result.dataUrl;
+        if (emo === "neutral" && !draft.photo) { draft.photo = result.dataUrl; draft.sprite = result.transparent; renderPhoto(); }
         renderSlots();
       });
       // 길게 누르거나 우클릭하면 해당 표정 사진 지우기
@@ -149,24 +164,48 @@
     }
   }
 
-  $("edit-photo").addEventListener("change", async (e) => {
+  async function applyPhoto(file) {
+    const result = await editImage(file, PHOTO_SIZE);
+    if (!result) return;
+    photoFile = file;
+    draft.photo = result.dataUrl;
+    draft.sprite = result.transparent; // 투명 이미지면 테두리 없이 배경 위에 올림
+    renderPhoto();
+  }
+
+  $("edit-photo").addEventListener("change", (e) => {
     const file = e.target.files[0];
-    if (!file) return;
-    try { draft.photo = await resizeImage(file, 640); renderPhoto(); } catch (err) { alert(err.message); }
+    e.target.value = ""; // 같은 파일을 다시 골라도 change 가 오도록
+    if (file) applyPhoto(file);
   });
+  $("btn-photo-readjust").addEventListener("click", () => photoFile && applyPhoto(photoFile));
+
+  $("edit-bg").addEventListener("change", async (e) => {
+    const file = e.target.files[0];
+    e.target.value = "";
+    if (!file) return;
+    const result = await editImage(file, BG_SIZE);
+    if (!result) return;
+    draft.background = result.dataUrl;
+    renderBackground();
+  });
+  $("btn-bg-reset").addEventListener("click", () => { draft.background = ""; renderBackground(); });
 
   $("edit-form").addEventListener("submit", (e) => {
     e.preventDefault();
     if (!draft.photo) { alert("사진을 선택해 주세요."); return; }
     const name = $("edit-name").value.trim();
     const greeting = $("edit-greeting").value.trim();
-    if (window.hasBannedWord(name) || window.hasBannedWord(greeting)) { alert("사용할 수 없는 단어가 있어요."); return; }
+    const bio = $("edit-bio").value.trim();
+    if ([name, greeting, bio].some(window.hasBannedWord)) { alert("사용할 수 없는 단어가 있어요."); return; }
     Object.assign(draft, {
       name,
       nickname: $("edit-nick").value.trim(),
       persona: $("edit-persona").value,
       greeting: greeting || "안녕! 나랑 얘기하자.",
+      bio,
     });
+    window.AiChat.reset(draft.id); // 설정이 바뀌었으니 AI 대화 기록은 새로 시작
     if (!draft.id) {
       draft.id = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
       characters.push(draft);
@@ -217,6 +256,7 @@
     const received = {
       id: "s_" + cloudId, cloudId, readonly: true, nickname: "", affection: 10,
       name: doc.name, persona: doc.persona, greeting: doc.greeting, photo: doc.photo, slots: doc.slots || {}, sprite: !!doc.sprite,
+      bio: doc.bio || "", background: doc.background || "",
     };
     characters.push(received);
     saveCharacters(characters);
@@ -416,6 +456,8 @@
     $("btn-edit").textContent = c.readonly ? "🗑" : "✎";
     $("btn-edit").title = c.readonly ? "목록에서 지우기" : "수정";
     $("avatar").classList.toggle("png-sprite", !!c.sprite);
+    document.querySelector("#screen-chat .stage").style.backgroundImage = c.background ? `url("${c.background}")` : "";
+    renderModeChip();
     $("chat-log").innerHTML = "";
     setAffection(0);
     setEmotion("neutral", false);
@@ -504,14 +546,108 @@
 
     addMessage("me", text);
     const typing = addMessage("her typing", "···");
-    await new Promise((r) => setTimeout(r, 450 + Math.random() * 450));
-    typing.remove();
+    const sendBtn = document.querySelector("#chat-form button");
+    sendBtn.disabled = true;
+    const who = current; // 응답을 기다리는 사이 다른 캐릭터로 옮겨 가도 섞이지 않게
 
-    const res = engine.respond(text, current);
+    let res = null;
+    if (window.AiChat.enabled && !window.hasBannedWord(text)) {
+      try {
+        res = await window.AiChat.respond(who, text);
+        if (window.hasBannedWord(res.reply)) res = null; // AI 대답도 한 번 더 거름
+      } catch (err) {
+        addMessage("system", `AI 연결 실패: ${err.message} 기본 대화로 대답할게요.`);
+      }
+    } else {
+      await new Promise((r) => setTimeout(r, 450 + Math.random() * 450));
+    }
+    typing.remove();
+    sendBtn.disabled = false;
+    if (current !== who) return;
+
+    if (!res) res = engine.respond(text, current);
     setEmotion(res.emotion);
     if (res.affection) setAffection(res.affection);
     addMessage("her", res.reply, res.unknown ? teachButton(text) : null);
   });
+
+  // ---------------------------------------------------------------- AI 실시간 대화 설정
+  function renderModeChip() {
+    const on = window.AiChat.enabled;
+    $("chat-mode").textContent = on ? `AI · ${window.AiChat.label()}` : "기본 대화";
+    $("chat-mode").classList.toggle("on", on);
+    $("ai-home-state").textContent = on ? `(켜짐 · ${window.AiChat.label()})` : "(꺼짐)";
+  }
+
+  function fillAiForm(s) {
+    const sel = $("ai-provider");
+    if (!sel.options.length) {
+      for (const [id, p] of Object.entries(window.AiChat.PROVIDERS)) sel.add(new Option(p.label, id));
+    }
+    sel.value = s.provider;
+    $("ai-model").value = s.model;
+    $("ai-key").value = s.key || "";
+    $("ai-remember").checked = !!s.remember;
+    $("ai-key-link").href = window.AiChat.PROVIDERS[s.provider].keyUrl;
+    $("ai-status").textContent = "";
+  }
+
+  function readAiForm() {
+    return {
+      provider: $("ai-provider").value,
+      model: $("ai-model").value.trim() || window.AiChat.PROVIDERS[$("ai-provider").value].model,
+      key: $("ai-key").value.trim(),
+      remember: $("ai-remember").checked,
+    };
+  }
+
+  function openAiSheet() {
+    fillAiForm(window.AiChat.settings);
+    $("ai-sheet").hidden = false;
+  }
+  function closeAiSheet() { $("ai-sheet").hidden = true; }
+
+  $("btn-ai-home").addEventListener("click", openAiSheet);
+  $("chat-mode").addEventListener("click", openAiSheet);
+  $("ai-sheet").addEventListener("click", (e) => { if (e.target.id === "ai-sheet") closeAiSheet(); });
+  $("ai-provider").addEventListener("change", () => {
+    const p = window.AiChat.PROVIDERS[$("ai-provider").value];
+    $("ai-model").value = p.model; // 서비스를 바꾸면 그 서비스의 기본 모델로
+    $("ai-key").value = "";
+    $("ai-key-link").href = p.keyUrl;
+  });
+
+  $("ai-test").addEventListener("click", async () => {
+    const s = readAiForm();
+    if (!s.key) { $("ai-status").textContent = "API 키를 먼저 넣어 주세요."; return; }
+    $("ai-status").textContent = "연결 테스트 중…";
+    try {
+      const r = await window.AiChat.test(s);
+      $("ai-status").textContent = `✅ 연결 성공! 테스트 대답: "${r.reply}"`;
+    } catch (err) {
+      $("ai-status").textContent = `❌ ${err.message || "연결 실패"}`;
+    }
+  });
+
+  $("ai-form").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const s = readAiForm();
+    if (!s.key) { $("ai-status").textContent = "API 키를 넣어야 AI 대화를 켤 수 있어요."; return; }
+    window.AiChat.saveSettings({ ...s, enabled: true });
+    closeAiSheet();
+    renderModeChip();
+    if (current && !$("screen-chat").hidden) addMessage("system", `AI 실시간 대화가 켜졌어요 (${window.AiChat.label()}).`);
+  });
+
+  $("ai-off").addEventListener("click", () => {
+    // 끄면 키도 지움 (다시 켤 때 새로 입력)
+    window.AiChat.saveSettings({ ...readAiForm(), key: "", remember: false, enabled: false });
+    closeAiSheet();
+    renderModeChip();
+    if (current && !$("screen-chat").hidden) addMessage("system", "AI 대화를 껐어요. 기본 대화로 돌아가요.");
+  });
+
+  renderModeChip();
 
   route();
 })();
