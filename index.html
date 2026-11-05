@@ -1,0 +1,429 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>AI 캐릭터 스튜디오</title>
+  <meta name="description" content="내 사진으로 캐릭터를 만들고 대화해 보세요. Make a character from your photo and chat with it.">
+  <!-- 카카오톡/SNS 링크 미리보기 (이미지는 전체 주소여야 함) -->
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://hyungd0.github.io/ai-character-studio/">
+  <meta property="og:title" content="AI 캐릭터 스튜디오 · AI Character Studio">
+  <meta property="og:description" content="내 사진으로 캐릭터를 만들고 대화해 보세요 💌 Make a character from your photo and chat with it.">
+  <meta property="og:image" content="https://hyungd0.github.io/ai-character-studio/assets/haru/happy.webp">
+  <link rel="manifest" href="manifest.webmanifest">
+  <meta name="theme-color" content="#ff6fa5">
+  <link rel="apple-touch-icon" href="assets/icons/apple-touch-icon.png">
+  <link rel="stylesheet" href="style.css?v=35">
+  <script>
+    // 저장된 테마를 그림 그리기 전에 적용 (핑크가 잠깐 보였다가 바뀌지 않도록)
+    try { const th = localStorage.getItem("aics.theme.v1"); if (th && th !== "pink") document.documentElement.dataset.theme = th; } catch { /* 비공개 창 */ }
+  </script>
+</head>
+<body>
+  <div id="app">
+
+    <!-- ① 홈: 내 캐릭터 목록 -->
+    <section id="screen-home" class="screen">
+      <div class="home-tools">
+        <button id="btn-help" class="btn ghost small" data-i18n="home.help">❓ 사용법</button>
+        <div class="picks">
+          <label class="lang-pick">🎨 <select id="theme-select" data-i18n-aria="theme.label"></select></label>
+          <label class="lang-pick">🌐 <select id="lang-select" data-i18n-aria="lang.label"></select></label>
+        </div>
+      </div>
+      <header class="top">
+        <h1 data-i18n="app.title">AI 캐릭터 스튜디오</h1>
+        <p class="sub" data-i18n="app.sub">사진 한 장으로 나만의 대화 캐릭터 만들기</p>
+      </header>
+      <div id="character-list" class="card-grid"></div>
+      <button id="btn-new" class="btn primary big" data-i18n="home.new">＋ 새 캐릭터 만들기</button>
+      <button id="btn-gallery" class="btn big gallery-entry" data-i18n="home.gallery">🌏 다른 사람 캐릭터 둘러보기</button>
+      <button id="btn-groups" class="btn big gallery-entry" data-i18n="home.groups">👥 캐릭터 단톡방</button>
+      <button id="btn-ai-home" class="btn big ai-entry"><span data-i18n="home.ai">🤖 AI 실시간 대화 설정</span> <span id="ai-home-state"></span></button>
+      <p class="hint" data-i18n="home.saved">캐릭터는 이 기기(브라우저)에 저장돼요.</p>
+      <button id="btn-install" class="btn ghost small" hidden data-i18n="home.install">📱 앱으로 설치하기</button>
+      <p id="ios-install-hint" class="hint" hidden data-i18n="home.iosInstall"></p>
+      <footer class="credit">
+        <span data-i18n="app.credit">만든 사람 · 김형도</span>
+        · <a href="#/privacy" data-i18n="privacy.link">개인정보·이용 안내</a>
+        <span id="admin-link" hidden> · <a href="#/admin" data-i18n="admin.link">관리</a></span>
+      </footer>
+    </section>
+
+    <!-- ② 만들기 / 수정 -->
+    <section id="screen-edit" class="screen" hidden>
+      <header class="bar">
+        <button class="btn ghost" data-go="home" data-i18n="common.back">← 뒤로</button>
+        <h2 id="edit-title" data-i18n="edit.new">새 캐릭터</h2>
+      </header>
+
+      <p id="edit-restored" class="hint warn" hidden>
+        <span data-i18n="edit.restored">💾 저장하지 않고 나갔던 내용을 불러왔어요.</span>
+        <button type="button" id="btn-discard-draft" class="btn ghost small" data-i18n="edit.discard">처음 상태로 되돌리기</button>
+      </p>
+      <form id="edit-form" class="form">
+        <label class="photo-pick">
+          <img id="edit-photo-preview" alt="">
+          <span id="edit-photo-empty" data-i18n-html="edit.photo">📷<br>사진 선택</span>
+          <input type="file" id="edit-photo" accept="image/*">
+        </label>
+        <p class="hint" data-i18n="edit.photoHint">사진을 고르면 확대·축소하고 위치를 맞출 수 있어요. 배경이 투명한 PNG를 권장해요.</p>
+        <button type="button" id="btn-photo-readjust" class="btn small-btn" hidden data-i18n="edit.readjust">사진 다시 맞추기</button>
+
+        <div class="bg-pick">
+          <span class="label" data-i18n="edit.bg">배경</span>
+          <label class="bg-thumb">
+            <img id="edit-bg-preview" alt="">
+            <span id="edit-bg-empty" data-i18n="edit.bgDefault">기본 방</span>
+            <input type="file" id="edit-bg" accept="image/*">
+          </label>
+          <button type="button" id="btn-bg-reset" class="btn small-btn" hidden data-i18n="edit.bgReset">기본 배경으로</button>
+        </div>
+
+        <section class="emotion-slots">
+          <div class="section-head">
+            <span class="label" data-i18n="edit.slots">표정 이미지</span>
+            <span id="slot-count" class="muted small"></span>
+          </div>
+          <p class="hint left" data-i18n-html="edit.slotsHint"></p>
+          <div id="slot-list" class="slot-list"></div>
+        </section>
+
+        <label><span data-i18n="edit.name">이름</span> <input id="edit-name" maxlength="12" required data-i18n-ph="edit.namePh"></label>
+        <label><span data-i18n="edit.nick">나를 부르는 호칭</span> <input id="edit-nick" maxlength="12" data-i18n-ph="edit.nickPh"></label>
+        <div class="field">
+          <span class="label" data-i18n="edit.speech">말투</span>
+          <div id="speech-presets" class="chips">
+            <button type="button" class="chip" data-persona="sweet" data-i18n="persona.sweet">다정함</button>
+            <button type="button" class="chip" data-persona="tsundere" data-i18n="persona.tsundere">츤데레</button>
+            <button type="button" class="chip" data-persona="playful" data-i18n="persona.playful">장난꾸러기</button>
+            <button type="button" class="chip" data-persona="calm" data-i18n="persona.calm">차분함</button>
+          </div>
+          <textarea id="edit-speech" rows="2" data-i18n-ph="edit.speechPh"></textarea>
+        </div>
+        <label><span data-i18n="edit.birthday">캐릭터 생일</span> <small class="muted" data-i18n="edit.optional">(선택)</small>
+          <input id="edit-birthday" type="date"></label>
+        <label><span data-i18n="edit.greeting">첫인사</span> <input id="edit-greeting" maxlength="60" data-i18n-ph="edit.greetingPh"></label>
+        <label><span data-i18n="edit.bio">캐릭터 설정</span> <small class="muted" data-i18n="edit.bioNote">(AI 대화에서 사용)</small>
+          <textarea id="edit-bio" rows="4" data-i18n-ph="edit.bioPh"></textarea>
+        </label>
+
+        <label class="consent">
+          <input type="checkbox" id="edit-consent" required>
+          <span data-i18n="edit.consent">본인 사진이거나 사용 권한이 있는 이미지예요. (타인·연예인 사진 금지)</span>
+        </label>
+
+        <div class="row">
+          <button type="button" id="btn-delete" class="btn danger" hidden data-i18n="edit.delete">삭제</button>
+          <button type="submit" class="btn primary grow" data-i18n="edit.save">저장하고 대화하기</button>
+        </div>
+      </form>
+    </section>
+
+    <!-- ③ 대화 -->
+    <section id="screen-chat" class="screen" hidden>
+      <header class="bar">
+        <button class="btn ghost" data-go="home">←</button>
+        <h2 id="chat-name"></h2>
+        <div class="affection" data-i18n-title="chat.affection"><span>💗</span><div class="meter"><i id="affection-fill"></i></div></div>
+        <button id="btn-card" class="btn ghost" data-i18n-title="chat.card">📸</button>
+        <button id="btn-share" class="btn ghost" data-i18n-title="chat.share">📤</button>
+        <button id="btn-edit" class="btn ghost">✎</button>
+      </header>
+
+      <!-- 공유 링크로 들어온 사람에게 보이는 안내 -->
+      <div id="guest-banner" class="guest-banner" hidden>
+        <span data-i18n="chat.guest">친구가 만든 캐릭터예요</span>
+        <button id="btn-remix" class="btn" data-i18n="chat.remix">🔁 이 설정으로</button>
+        <button id="btn-make-own" class="btn primary" data-i18n="chat.makeOwn">나도 만들기</button>
+      </div>
+
+      <div class="stage">
+        <button id="chat-mode" class="mode-chip" data-i18n-title="chat.modeTitle"></button>
+        <button id="btn-reset-chat" class="mode-chip reset-chip" data-i18n-title="chat.resetTitle" data-i18n="chat.reset">↺ 초기화</button>
+        <button id="btn-missions" class="mode-chip mission-chip" data-i18n-title="mission.title"></button>
+        <span id="dday-chip" class="mode-chip dday-chip"></span>
+        <button id="btn-like" class="mode-chip like-chip" hidden data-i18n-title="like.title"></button>
+        <div id="avatar" class="avatar emo-neutral">
+          <img id="avatar-img" alt="">
+          <div class="fx blush"></div>
+          <div class="fx tint"></div>
+          <div id="avatar-badge" class="badge"></div>
+        </div>
+      </div>
+
+      <!-- 공개 캐릭터의 댓글 입구: 개수와 최신 댓글을 항상 보여 줌 -->
+      <button type="button" id="comments-strip" class="comments-strip" hidden>
+        <b id="comments-strip-count"></b>
+        <span id="comments-strip-preview"></span>
+        <i aria-hidden="true">›</i>
+      </button>
+
+      <div id="chat-log" class="chat-log" aria-live="polite"></div>
+
+      <form id="chat-form" class="chat-input">
+        <input id="chat-text" autocomplete="off" maxlength="120">
+        <button class="btn primary" data-i18n="chat.send">보내기</button>
+      </form>
+    </section>
+
+    <!-- ④ 공개 갤러리 -->
+    <section id="screen-gallery" class="screen" hidden>
+      <header class="bar">
+        <button class="btn ghost" data-go="home" data-i18n="common.back">← 뒤로</button>
+        <h2 data-i18n="gallery.title">🌏 둘러보기</h2>
+      </header>
+      <div class="chips gallery-tabs">
+        <button type="button" class="chip on" data-sort="views" data-i18n="gallery.popular">🔥 인기</button>
+        <button type="button" class="chip" data-sort="week" data-i18n="gallery.week">❤️ 이번 주</button>
+        <button type="button" class="chip" data-sort="likes" data-i18n="gallery.allTime">🏆 전체</button>
+        <button type="button" class="chip" data-sort="createdAt" data-i18n="gallery.new">✨ 최신</button>
+      </div>
+      <p id="gallery-status" class="hint"></p>
+      <div id="gallery-list" class="card-grid"></div>
+      <p class="hint" data-i18n="gallery.hint"></p>
+    </section>
+
+    <!-- ⑦ 캐릭터 단톡방 목록 · 만들기 -->
+    <section id="screen-groups" class="screen" hidden>
+      <header class="bar">
+        <button class="btn ghost" data-go="home" data-i18n="common.back">← 뒤로</button>
+        <h2 data-i18n="group.listTitle">👥 캐릭터 단톡방</h2>
+      </header>
+      <p class="hint" data-i18n="group.intro"></p>
+      <div id="group-list" class="group-list"></div>
+      <form id="group-form" class="form group-form">
+        <h3 class="section-title" data-i18n="group.new">＋ 새 단톡방</h3>
+        <label><span data-i18n="group.name">방 이름</span> <input id="group-name" maxlength="20" data-i18n-ph="group.namePh"></label>
+        <span class="label" data-i18n="group.pick">함께할 캐릭터 (2~4명)</span>
+        <div id="group-pick" class="group-pick"></div>
+        <button class="btn primary" data-i18n="group.create">만들기</button>
+      </form>
+    </section>
+
+    <!-- ⑧ 캐릭터 단톡방 -->
+    <section id="screen-group" class="screen" hidden>
+      <header class="bar">
+        <button class="btn ghost" data-i18n="common.back" id="group-back">← 뒤로</button>
+        <h2 id="group-title"></h2>
+        <button id="btn-group-delete" class="btn ghost" data-i18n-title="group.delete">🗑</button>
+      </header>
+      <div id="group-members" class="group-members"></div>
+      <p id="group-mode" class="hint"></p>
+      <div id="group-log" class="chat-log group-log" aria-live="polite"></div>
+      <button id="btn-group-auto" class="btn small-btn group-auto" data-i18n="group.auto">▶ 캐릭터끼리 대화시키기</button>
+      <form id="group-form-send" class="chat-input">
+        <input id="group-text" autocomplete="off" maxlength="120" data-i18n-ph="chat.placeholder">
+        <button class="btn primary" data-i18n="chat.send">보내기</button>
+      </form>
+    </section>
+
+    <!-- ⑤ 관리자 -->
+    <section id="screen-admin" class="screen" hidden>
+      <header class="bar">
+        <button class="btn ghost" data-go="home" data-i18n="common.back">← 뒤로</button>
+        <h2 data-i18n="admin.title">🛠 관리</h2>
+      </header>
+      <p id="admin-status" class="hint"></p>
+      <h3 class="section-title" data-i18n="admin.reports">🚩 신고</h3>
+      <div id="admin-reports" class="admin-list"></div>
+      <h3 class="section-title" data-i18n="admin.answers">✏️ 가르친 대답 검토</h3>
+      <p class="hint left" data-i18n="admin.answersHint"></p>
+      <a id="admin-sheet-link" class="btn" target="_blank" rel="noopener" data-i18n="admin.openSheet">구글 시트 열기 ↗</a>
+    </section>
+
+    <!-- ⑥ 개인정보·이용 안내 -->
+    <section id="screen-privacy" class="screen" hidden>
+      <header class="bar">
+        <button class="btn ghost" data-go="home" data-i18n="common.back">← 뒤로</button>
+        <h2 data-i18n="privacy.title">개인정보·이용 안내</h2>
+      </header>
+      <article class="privacy" data-i18n-html="privacy.body"></article>
+    </section>
+
+    <!-- 공유 링크로 캐릭터를 불러오는 중 / 실패 -->
+    <section id="screen-loading" class="screen center" hidden>
+      <p id="loading-text"></p>
+      <button class="btn primary" data-go="home" id="loading-home" hidden data-i18n="common.home">홈으로</button>
+    </section>
+  </div>
+
+  <!-- 공유 시트 -->
+  <div id="share-sheet" class="sheet-backdrop" hidden>
+    <div class="sheet" role="dialog" aria-labelledby="share-title">
+      <h3 id="share-title" data-i18n="share.titleDefault">친구에게 공유하기</h3>
+      <p id="share-views" class="views" hidden></p>
+      <p id="share-status" class="hint"></p>
+      <div id="share-body" hidden>
+        <button id="btn-kakao" class="btn kakao big" hidden data-i18n="share.kakao">💬 카카오톡으로 공유</button>
+        <!-- 접속 나라에 맞는 SNS 버튼 (LINE, WhatsApp, X, 微博 …) -->
+        <div id="share-social" class="social-row"></div>
+        <button id="btn-share-insta" class="btn insta" data-i18n="share.instaCard">📷 인스타 스토리용 카드 만들기</button>
+        <input id="share-link" readonly>
+        <div class="row">
+          <button id="btn-copy" class="btn grow" data-i18n="share.copy">링크 복사</button>
+          <button id="btn-qr" class="btn grow" data-i18n="share.qr">📱 QR 코드</button>
+          <button id="btn-native-share" class="btn primary grow" data-i18n="share.native">공유하기</button>
+        </div>
+        <div id="qr-box" class="qr-box" hidden>
+          <div id="qr-code"></div>
+          <p id="qr-hint" class="hint"></p>
+        </div>
+        <p class="hint" data-i18n="share.hint">링크를 아는 사람만 볼 수 있어요. 받은 사람은 대화만 할 수 있고 수정은 못 해요.</p>
+        <div id="gallery-share-box" class="ai-share" hidden>
+          <label class="consent"><input type="checkbox" id="gallery-on"> <span data-i18n-html="gallery.shareOn"></span></label>
+          <p id="gallery-share-status" class="hint left"></p>
+        </div>
+        <div id="ai-share-box" class="ai-share" hidden>
+          <label class="consent"><input type="checkbox" id="ai-share-on"> <span data-i18n-html="share.aiOn"></span></label>
+          <label class="row ai-share-limit"><span data-i18n="share.limit">하루 최대</span>
+            <select id="ai-share-limit">
+              <option value="30">30</option>
+              <option value="100" selected>100</option>
+              <option value="300">300</option>
+              <option value="1000">1000</option>
+              <option value="custom">직접 입력</option>
+            </select>
+            <input id="ai-share-limit-custom" type="number" min="1" max="10000" step="1" inputmode="numeric" hidden>
+          </label>
+          <p class="hint left" data-i18n-html="share.aiHint"></p>
+          <p id="ai-share-status" class="hint left"></p>
+        </div>
+      </div>
+      <button id="btn-report" class="btn ghost small" hidden data-i18n="share.report">🚩 이 캐릭터 신고하기</button>
+      <button id="btn-unshare" class="btn ghost small" hidden data-i18n="share.unshare">공유 중지 (링크 삭제)</button>
+      <button id="btn-sheet-close" class="btn ghost" data-i18n="common.close">닫기</button>
+    </div>
+  </div>
+
+  <!-- 사진 편집기 -->
+  <div id="image-editor" class="sheet-backdrop" hidden>
+    <div class="sheet" role="dialog" aria-labelledby="ie-title">
+      <h3 id="ie-title" data-i18n="ie.title">사진 맞추기</h3>
+      <canvas id="ie-canvas" class="ie-canvas"></canvas>
+      <div class="row ie-zoom-row">
+        <span>－</span><input type="range" id="ie-zoom" class="grow" data-i18n-aria="ie.zoom"><span>＋</span>
+      </div>
+      <p id="ie-hint" class="hint"></p>
+      <p class="hint" data-i18n="ie.hint">드래그로 위치 이동 · 슬라이더/휠/두 손가락으로 확대·축소</p>
+      <div class="row">
+        <button id="ie-cancel" class="btn" data-i18n="common.cancel">취소</button>
+        <button id="ie-fit" class="btn" data-i18n="ie.fit">꽉 채우기 ↔ 전체</button>
+        <button id="ie-ok" class="btn primary grow" data-i18n="ie.ok">완료</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- AI 대화 설정 -->
+  <div id="ai-sheet" class="sheet-backdrop" hidden>
+    <form id="ai-form" class="sheet form" role="dialog" aria-labelledby="ai-title">
+      <h3 id="ai-title" data-i18n="ai.title">🤖 AI 실시간 대화</h3>
+      <p class="hint" data-i18n="ai.intro"></p>
+      <label><span data-i18n="ai.provider">AI 서비스</span>
+        <select id="ai-provider"></select>
+      </label>
+      <label><span data-i18n="ai.model">모델</span> <input id="ai-model" autocomplete="off" spellcheck="false"></label>
+      <label><span data-i18n="ai.key">API 키</span> <input id="ai-key" type="text" class="masked" name="ai-api-key-field" autocomplete="off" data-lpignore="true" data-1p-ignore spellcheck="false" data-i18n-ph="ai.keyPh"></label>
+      <a id="ai-key-link" class="hint-link" target="_blank" rel="noopener" data-i18n="ai.keyLink">API 키 발급받기 ↗</a>
+      <label class="consent"><input type="checkbox" id="ai-remember" checked> <span data-i18n="ai.remember"></span></label>
+      <label class="consent"><input type="checkbox" id="ai-search"> <span data-i18n-html="ai.search"></span></label>
+      <button type="button" id="ai-forget" class="btn ghost small" data-i18n="ai.forget">저장된 키 모두 지우기</button>
+      <p class="hint warn" data-i18n="ai.warn"></p>
+      <p id="ai-status" class="hint"></p>
+      <div class="row">
+        <button type="button" id="ai-off" class="btn" data-i18n="ai.off">AI 끄기</button>
+        <button type="button" id="ai-test" class="btn" data-i18n="ai.test">연결 테스트</button>
+        <button type="submit" class="btn primary grow" data-i18n="ai.save">저장</button>
+      </div>
+    </form>
+  </div>
+
+  <!-- 대화 초기화 -->
+  <div id="reset-sheet" class="sheet-backdrop" hidden>
+    <div class="sheet" role="dialog" aria-labelledby="reset-title">
+      <h3 id="reset-title" data-i18n="reset.title">대화 초기화</h3>
+      <p class="hint" data-i18n="reset.hint"></p>
+      <button id="btn-reset-chat-only" class="btn big" data-i18n="reset.chat">💬 대화만 지우기</button>
+      <button id="btn-reset-all" class="btn danger big" data-i18n="reset.all">💔 대화 + 호감도 처음부터</button>
+      <button id="btn-reset-cancel" class="btn ghost" data-i18n="common.cancel">취소</button>
+    </div>
+  </div>
+
+  <!-- 대화 카드 -->
+  <div id="card-sheet" class="sheet-backdrop" hidden>
+    <div class="sheet" role="dialog" aria-labelledby="card-title">
+      <h3 id="card-title" data-i18n="card.title">대화 카드</h3>
+      <p id="card-status" class="hint"></p>
+      <img id="card-preview" class="card-preview" data-i18n-alt="card.alt" hidden>
+      <button id="btn-card-kakao" class="btn kakao" hidden data-i18n="card.kakao">💬 카톡으로 카드 보내기</button>
+      <button id="btn-card-insta" class="btn insta" hidden data-i18n="card.insta">📷 인스타 스토리에 올리기</button>
+      <p id="insta-hint" class="hint" hidden></p>
+      <div class="row">
+        <button id="btn-card-save" class="btn grow" data-i18n="card.save">이미지 저장</button>
+        <button id="btn-card-share" class="btn primary grow" hidden data-i18n="card.share">공유하기</button>
+      </div>
+      <button id="btn-card-close" class="btn ghost" data-i18n="common.close">닫기</button>
+    </div>
+  </div>
+
+  <!-- 오늘의 대화 미션 -->
+  <div id="mission-sheet" class="sheet-backdrop" hidden>
+    <div class="sheet" role="dialog" aria-labelledby="mission-title">
+      <h3 id="mission-title" data-i18n="mission.title">🎯 오늘의 대화 미션</h3>
+      <p class="hint" data-i18n="mission.hint"></p>
+      <div id="mission-list" class="mission-list"></div>
+      <button id="btn-mission-close" class="btn ghost" data-i18n="common.close">닫기</button>
+    </div>
+  </div>
+
+  <!-- 공개 캐릭터 댓글 -->
+  <div id="comments-sheet" class="sheet-backdrop" hidden>
+    <div class="sheet" role="dialog" aria-labelledby="comments-title">
+      <h3 id="comments-title" data-i18n="comments.title">💬 댓글</h3>
+      <p id="comments-status" class="hint"></p>
+      <div id="comments-list" class="comments-list"></div>
+      <form id="comments-form" class="comments-form">
+        <input id="comment-nick" maxlength="12" data-i18n-ph="comments.nick">
+        <div class="row">
+          <input id="comment-text" class="grow" maxlength="100" required data-i18n-ph="comments.ph">
+          <button class="btn primary" data-i18n="comments.send">등록</button>
+        </div>
+      </form>
+      <button id="btn-comments-close" class="btn ghost" data-i18n="common.close">닫기</button>
+    </div>
+  </div>
+
+  <!-- 처음 온 사람용 사용법 -->
+  <div id="tutorial" class="sheet-backdrop tutorial" hidden>
+    <div class="sheet" role="dialog" aria-labelledby="tut-title">
+      <img id="tut-img" class="tut-img" alt="">
+      <h3 id="tut-title"></h3>
+      <p id="tut-body" class="tut-body"></p>
+      <div id="tut-langs" class="chips tut-langs"></div>
+      <div id="tut-dots" class="tut-dots"></div>
+      <div class="row">
+        <button id="tut-skip" class="btn ghost" data-i18n="tut.skip">건너뛰기</button>
+        <button id="tut-prev" class="btn" data-i18n="tut.prev">이전</button>
+        <button id="tut-next" class="btn primary grow"></button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // 앱 설치(PWA): 서비스 워커 등록 (지원하지 않는 브라우저는 그냥 웹으로)
+    if ("serviceWorker" in navigator && location.protocol === "https:") navigator.serviceWorker.register("sw.js").catch(() => {});
+  </script>
+  <script src="config.js?v=35"></script>
+  <script src="i18n.js?v=35"></script>
+  <script src="analytics.js?v=35"></script>
+  <script src="chat-db.js?v=35"></script>
+  <script src="engine.js?v=35"></script>
+  <script src="ai.js?v=35"></script>
+  <script src="image-editor.js?v=35"></script>
+  <script src="cloud.js?v=35"></script>
+  <script src="kakao.js?v=35"></script>
+  <script src="viral.js?v=35"></script>
+  <script src="app.js?v=35"></script>
+</body>
+</html>

@@ -1,0 +1,14 @@
+{
+  "name": "AI 캐릭터 스튜디오",
+  "short_name": "AI 캐릭터",
+  "description": "사진 한 장으로 나만의 대화 캐릭터 만들기 · Make a character from your photo and chat with it",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#fff5f8",
+  "theme_color": "#ff6fa5",
+  "icons": [
+    { "src": "assets/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "assets/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}

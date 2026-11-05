@@ -1,0 +1,163 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // 공유된 캐릭터: 링크(id)를 아는 사람만 읽기, 목록 조회는 금지
+    match /characters/{id} {
+      allow get: if true;
+      allow list: if false;
+
+      allow create: if request.auth != null
+                    && request.resource.data.ownerUid == request.auth.uid
+                    && validCharacter(request.resource.data)
+                    && countedNewCharacter();
+
+      // 만든 사람(같은 익명 계정)만 수정·삭제
+      allow update: if request.auth != null
+                    && resource.data.ownerUid == request.auth.uid
+                    && request.resource.data.ownerUid == request.auth.uid
+                    && validCharacter(request.resource.data);
+
+      // 링크로 들어온 사람은 조회수(views)를 정확히 +1 하는 것만 가능
+      allow update: if request.auth != null
+                    && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['views'])
+                    && request.resource.data.views == resource.data.get('views', 0) + 1;
+      allow delete: if request.auth != null && (resource.data.ownerUid == request.auth.uid || isAdmin());
+    }
+
+    // 기기(익명 계정)별 오늘 새로 등록한 캐릭터 수. 캐릭터 등록과 한 번에(batch) 1씩만 오름
+    match /userLimits/{uid} {
+      allow get: if request.auth != null && request.auth.uid == uid;
+      allow create: if request.auth != null && request.auth.uid == uid
+                    && validLimit() && request.resource.data.count == 1;
+      allow update: if request.auth != null && request.auth.uid == uid
+                    && validLimit()
+                    && request.resource.data.count == (resource.data.day == today() ? resource.data.count + 1 : 1);
+    }
+
+    // 공개 갤러리: 누구나 목록 보기(최대 60개), 올리기·내리기는 캐릭터를 만든 사람만
+    // 조회수·좋아요 숫자는 만든 사람도 직접 못 바꾸고, 아래 규칙대로 1씩만 오르내림
+    match /gallery/{id} {
+      allow get: if true;
+      allow list: if request.query.limit <= 60;
+      allow create: if validGallery(id)
+                    && request.resource.data.get('views', 0) == 0
+                    && request.resource.data.get('likes', 0) == 0
+                    && !('weekLikes' in request.resource.data);
+      allow update: if validGallery(id)
+                    && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['views', 'likes', 'weekLikes', 'weekKey']);
+
+      // 좋아요 +1: 내 좋아요 문서를 같이 만들 때만. 주간 좋아요는 이번 주(월요일 0시, 한국 시간 기준)로 묶음
+      allow update: if request.auth != null
+                    && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likes', 'weekLikes', 'weekKey'])
+                    && !exists(likeDoc(id)) && existsAfter(likeDoc(id))
+                    && request.resource.data.likes == resource.data.get('likes', 0) + 1
+                    && request.resource.data.weekKey == thisWeek()
+                    && request.resource.data.weekLikes == (resource.data.get('weekKey', 0) == thisWeek() ? resource.data.get('weekLikes', 0) + 1 : 1);
+      // 좋아요 취소 -1: 내 좋아요 문서를 같이 지울 때만 (이번 주에 누른 좋아요면 주간 숫자도 -1)
+      allow update: if request.auth != null
+                    && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likes', 'weekLikes'])
+                    && exists(likeDoc(id)) && !existsAfter(likeDoc(id))
+                    && request.resource.data.likes == resource.data.get('likes', 0) - 1
+                    && request.resource.data.weekLikes == (get(likeDoc(id)).data.weekKey == resource.data.get('weekKey', 0) ? resource.data.get('weekLikes', 0) - 1 : resource.data.get('weekLikes', 0));
+
+      // 내 좋아요 표시 (기기마다 하나)
+      match /likes/{uid} {
+        allow get: if request.auth != null && request.auth.uid == uid;
+        allow create: if request.auth != null && request.auth.uid == uid
+                      && request.resource.data.weekKey == thisWeek()
+                      && getAfter(/databases/$(database)/documents/gallery/$(id)).data.likes == get(/databases/$(database)/documents/gallery/$(id)).data.get('likes', 0) + 1;
+        allow delete: if request.auth != null && request.auth.uid == uid
+                      && getAfter(/databases/$(database)/documents/gallery/$(id)).data.likes == get(/databases/$(database)/documents/gallery/$(id)).data.get('likes', 0) - 1;
+      }
+      allow update: if request.auth != null
+                    && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['views'])
+                    && request.resource.data.views == resource.data.get('views', 0) + 1;
+      allow delete: if request.auth != null && (resource.data.ownerUid == request.auth.uid || isAdmin());
+
+      // 공개 캐릭터의 댓글: 누구나 읽기·쓰기(100자), 지우기는 쓴 사람·캐릭터 주인·관리자
+      match /comments/{cid} {
+        allow get: if true;
+        allow list: if request.query.limit <= 50;
+        allow create: if request.auth != null
+                      && request.resource.data.uid == request.auth.uid
+                      && request.resource.data.text is string
+                      && request.resource.data.text.size() > 0 && request.resource.data.text.size() <= 100
+                      && request.resource.data.nick is string && request.resource.data.nick.size() <= 12
+                      && exists(/databases/$(database)/documents/gallery/$(id));
+        allow update: if false;
+        allow delete: if request.auth != null
+                      && (resource.data.uid == request.auth.uid
+                          || get(/databases/$(database)/documents/gallery/$(id)).data.ownerUid == request.auth.uid
+                          || isAdmin());
+      }
+    }
+
+    // 신고: 누구나 쓰기, 읽기·지우기는 관리자만
+    match /reports/{id} {
+      allow create: if request.auth != null
+                    && request.resource.data.reporterUid == request.auth.uid
+                    && request.resource.data.reason is string
+                    && request.resource.data.reason.size() <= 200;
+      allow read, delete: if isAdmin();
+      allow update: if false;
+    }
+
+    function validGallery(id) {
+      return request.auth != null
+          && request.resource.data.ownerUid == request.auth.uid
+          && get(/databases/$(database)/documents/characters/$(id)).data.ownerUid == request.auth.uid
+          && request.resource.data.name is string && request.resource.data.name.size() <= 12
+          && request.resource.data.thumb is string && request.resource.data.thumb.size() < 80000;
+    }
+    function likeDoc(id) {
+      return /databases/$(database)/documents/gallery/$(id)/likes/$(request.auth.uid);
+    }
+    // 이번 주 번호: 1970년부터 센 주 (월요일 0시 한국 시간에 바뀜). 화면 쪽 cloud.js 의 weekKey() 와 같은 계산
+    function thisWeek() {
+      return math.floor((request.time.toMillis() + 291600000) / 604800000);
+    }
+
+    // 관리자: 관리 화면을 쓰는 기기의 익명 로그인 uid (web/config.js 의 adminUids 와 같게)
+    function isAdmin() {
+      return request.auth != null && request.auth.uid in ['WbUKEXAuLvb8TXE0rLDz8nBqoJY2'];
+    }
+
+    function today() {
+      return math.floor(request.time.toMillis() / 86400000);
+    }
+    // 하루 새 캐릭터 수 한도. web/cloud.js 의 MAX_NEW_PER_DAY 와 같게
+    function maxNewPerDay() {
+      return 20;
+    }
+    function validLimit() {
+      return request.resource.data.keys().hasOnly(['day', 'count'])
+          && request.resource.data.day == today()
+          && request.resource.data.count is int
+          && request.resource.data.count <= maxNewPerDay();
+    }
+    function limitPath() {
+      return /databases/$(database)/documents/userLimits/$(request.auth.uid);
+    }
+    // 이번 등록으로 오늘 횟수가 정확히 1 올랐는지 (횟수 문서를 건드리지 않은 등록은 거부)
+    function countedNewCharacter() {
+      return existsAfter(limitPath())
+          && getAfter(limitPath()).data.day == today()
+          && getAfter(limitPath()).data.count == (exists(limitPath()) && get(limitPath()).data.day == today() ? get(limitPath()).data.count + 1 : 1);
+    }
+
+    function validCharacter(d) {
+      return d.name is string && d.name.size() > 0 && d.name.size() <= 12
+          && d.greeting is string && d.greeting.size() <= 60
+          && d.persona in ['sweet', 'tsundere', 'playful', 'calm']
+          && d.photo is string && d.photo.size() < 400000
+          && d.slots is map && d.slots.size() <= 10
+          && (!('customEmotions' in d) || (d.customEmotions is list && d.customEmotions.size() <= 5))
+          && (!('speech' in d) || d.speech is string)
+          && (!('bio' in d) || d.bio is string)
+          && (!('preview' in d) || (d.preview is string && d.preview.size() < 200000))
+          && (!('background' in d) || (d.background is string && d.background.size() < 400000))
+          && (!('birthday' in d) || (d.birthday is string && d.birthday.size() <= 5));
+    }
+  }
+}
